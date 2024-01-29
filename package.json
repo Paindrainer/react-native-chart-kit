@@ -1,11 +1,12 @@
 {
   "name": "@Paindrainer/pd-react-native-chart-kit",
-  "version": "0.0.44",
+  "version": "0.0.49",
   "type": "module",
   "description": "PD statistics and text generation.",
   "main": "src/index.ts",
   "scripts": {
-    "test": "mocha --recursive"
+    "test": "mocha --recursive",
+    "publishBeta": "npm publish --tag beta"
   },
   "author": "Paindrainer",
   "license": "ISC",
