@@ -1,9 +1,10 @@
 import _ from "lodash";
 import React from "react";
 import { View } from "react-native";
-import { G, Rect,  Svg, Text, Polygon} from "react-native-svg";
+import { G, Rect, RectProps, Svg, Text } from "react-native-svg";
 
 import AbstractChart from "../AbstractChart";
+import { mapValue } from "../Utils";
 import {
   convertToDate,
   getBeginningTimeForDate,
@@ -14,7 +15,7 @@ import {
   MILLISECONDS_IN_ONE_DAY,
   MONTH_LABELS
 } from "./constants";
-import { ContributionGraphProps, ContributionGraphDualState } from ".";
+import { ContributionGraphProps, ContributionGraphState } from ".";
 
 const SQUARE_SIZE = 20;
 const MONTH_LABEL_GUTTER_SIZE = 8;
@@ -22,28 +23,32 @@ const charWidth = 7;
 const charHeight = charWidth*1.2;
 const distTop = 40;
 
-export type ContributionChartValueDual = {
+export type ContributionChartValue = {
   value: number;
-  valueDual: number;
+  title: string;
+  tooltipDataAttrs: TooltipDataAttrs;
   date: Date;
 };
 
-class ContributionGraphDual extends AbstractChart<
-ContributionGraphProps,
-  ContributionGraphDualState
+export type TooltipDataAttrs = (
+  value: ContributionChartValue
+) => Partial<RectProps> | Partial<RectProps>;
+
+class ContributionGraph extends AbstractChart<
+  ContributionGraphProps,
+  ContributionGraphState
 > {
   constructor(props: ContributionGraphProps) {
     props.endDate = new Date(props.endDate.setUTCHours(0,0,0,0));
 
     super(props);
 
-    let { minValue, maxValue, minValueDual, maxValueDual, valueCache } = this.getValueCache(props.values);
+    let { maxValue, minValue, valueCache } = this.getValueCache(props.values);
+
 
     this.state = {
-      minValue,
       maxValue,
-      minValueDual,
-      maxValueDual,
+      minValue,
       valueCache
     };
   }
@@ -77,7 +82,7 @@ ContributionGraphProps,
   }
 
   getEndDate() {
-    return getBeginningTimeForDate(convertToDate(this.props.endDate));
+    return convertToDate(this.props.endDate);
   }
 
   getStartDateWithEmptyDays() {
@@ -129,9 +134,9 @@ ContributionGraphProps,
     );
   }
 
-  getValueCache(values: ContributionChartValueDual[]) {
-    let minValue = Infinity, maxValue = -Infinity;
-    let minValueDual = Infinity, maxValueDual = -Infinity;
+  getValueCache(values: ContributionChartValue[]) {
+    let minValue = Infinity,
+      maxValue = -Infinity;
 
     return {
       valueCache: values.reduce((memo, value) => {
@@ -143,23 +148,21 @@ ContributionGraphProps,
         );
 
         index = index;
-
         minValue = Math.min(value[this.props.accessor], minValue);
         maxValue = Math.max(value[this.props.accessor], maxValue);
 
-        minValueDual = Math.min(value[this.props.accessorDual], minValueDual);
-        maxValueDual = Math.max(value[this.props.accessorDual], maxValueDual);
-
         memo[index] = {
-          value // of type ContributionChartValueDual
+          value,
+          title: this.props.titleForValue
+            ? this.props.titleForValue(value)
+            : null,
+          tooltipDataAttrs: this.getTooltipDataAttrsForValue(value)
         };
 
         return memo;
       }, {}),
       minValue,
-      maxValue,
-      minValueDual,
-      maxValueDual
+      maxValue
     };
   }
 
@@ -170,20 +173,48 @@ ContributionGraphProps,
     return null;
   }
 
-  getColorsForIndex(index: number) {
+  getColorForIndex(index: number) {
     if (this.state.valueCache[index]) {
       if (this.state.valueCache[index].value) {
         const count = this.state.valueCache[index].value[this.props.accessor];
-        const countDual = this.state.valueCache[index].value[this.props.accessorDual];
-        return [this.props.chartConfig.color(count), this.props.chartConfig.colorDual(countDual)];
+        return this.props.chartConfig.color(count);
       }
     } else {
-      return [this.props.chartConfig.color(undefined), this.props.chartConfig.colorDual(undefined)];
+      return this.props.chartConfig.color(undefined)
     }
   }
 
   getColorForValue(value: number) {
     return this.props.chartConfig.color(value);
+  }
+
+  getTitleForIndex(index: number) {
+    if (this.state.valueCache[index]) {
+      return this.state.valueCache[index].title;
+    }
+
+    return this.props.titleForValue ? this.props.titleForValue(null) : null;
+  }
+
+  getTooltipDataAttrsForIndex(index: number) {
+    if (this.state.valueCache[index]) {
+      return this.state.valueCache[index].tooltipDataAttrs;
+    }
+
+    return this.getTooltipDataAttrsForValue({
+      date: null,
+      [this.props.accessor]: null
+    } as ContributionChartValue);
+  }
+
+  getTooltipDataAttrsForValue(value: ContributionChartValue) {
+    const { tooltipDataAttrs } = this.props;
+
+    if (typeof tooltipDataAttrs === "function") {
+      return tooltipDataAttrs(value);
+    }
+
+    return tooltipDataAttrs;
   }
 
   getPaddingLeft(){
@@ -201,6 +232,14 @@ ContributionGraphProps,
     return [xOffset+ this.getPaddingLeft(), 0]
   }
 
+  // getTransformForAllWeeks() {
+  //   return `0, ${this.getMonthLabelSize() - 100}`;
+  // }
+
+  // getViewBox() {
+  //   return `${this.getWidth()} ${this.getHeight()}`;
+  // }
+
   getSquareCoordinates(dayIndex: number) {
     return [0, dayIndex * this.getSquareSizeWithGutter()];
   }
@@ -212,7 +251,7 @@ ContributionGraphProps,
     ];
   }
 
-  getTransformForcolorLegend1() {
+  getTransformForColorLegend() {
     // align to left of weekday labels if they exist
     return [this.getPaddingLeft(), this.props.height];
   }
@@ -232,29 +271,21 @@ ContributionGraphProps,
 
     const [x, y] = this.getSquareCoordinates(dayIndex);
 
-    const { squareSize = SQUARE_SIZE } = this.props;
-
-    const colorList = this.getColorsForIndex(index);
-
-    const ul_points = `${x},${y} ${x+squareSize},${y} ${x},${y+squareSize}`
-    const ll_points = `${x+squareSize},${y} ${x+squareSize},${y+squareSize} ${x},${y+squareSize}`
-
-
+    const { squareSize = SQUARE_SIZE } = this.props;    
     return (
-      <G key={index} onPress={() => {
-        this.handleDayPress(index);
-      }}>
-      <Polygon
-        key={1000+index}
-        points={ll_points}
-        fill={colorList[1]}
-      />
-            <Polygon
+      <Rect
         key={index}
-        points={ul_points}
-        fill={colorList[0]}
+        width={squareSize}
+        height={squareSize}
+        x={x}
+        y={y}
+        title={this.getTitleForIndex(index)}
+        fill={this.getColorForIndex(index)}
+        onPress={() => {
+          this.handleDayPress(index);
+        }}
+        {...this.getTooltipDataAttrsForIndex(index)}
       />
-      </G>
     );
   }
 
@@ -292,21 +323,26 @@ ContributionGraphProps,
     );
   }
 
-  renderScale(cl, dual=false) {
+  renderScale() {
+    if (this.props.colorLegend) {
+      const cl = this.props.colorLegend;
+      var tempvalues = this.props.values.map((item) => {
+        return item.value;
+      });
 
-      let upperBound = cl.maxValue;
-      let lowerBound = cl.minValue;
+      let upperBound = Math.max(...tempvalues);
+      let lowerBound = Math.min(...tempvalues);
 
-      const yOffset = dual ? 45 : -5;
-      const cMap = dual ? this.props.chartConfig.colorDual : this.props.chartConfig.color;
+      if (cl.maxValue != null) upperBound = Math.max(upperBound, cl.maxValue);
+      if (cl.minValue != null) lowerBound = Math.min(lowerBound, cl.minValue);
 
       const createDescRange = (start, end) =>  
-        Array.from({length: (end - start+1)}, (v, k) => -k + end);
+      Array.from({length: (end - start+1)}, (v, k) => -k + end);
 
       const createAscRange = (start, end) =>  
         Array.from({length: (end - start+1)}, (v, k) => start + k);
 
-
+  
       const range = cl.descending? createDescRange(lowerBound, upperBound): createAscRange(lowerBound, upperBound);
 
       const { squareSize = SQUARE_SIZE } = this.props;
@@ -316,30 +352,28 @@ ContributionGraphProps,
       }))*charWidth;
 
       scaleStepsWidth = Math.max(scaleStepsWidth, squareSize);
-      const titleWidth = cl.titleWidth ? cl.titleWidth: (cl.title.length+1)*charWidth;
+      const titleWidth = (cl.title.length+1)*charWidth;
 
-      const [x0, y0] = this.getTransformForcolorLegend1();
+      const [x0, y0] = this.getTransformForColorLegend();
 
-      
       var squares =  range.map((value, index) => {
-        const x = titleWidth + (index) * (scaleStepsWidth);
-        const y = -charHeight*3 + yOffset;
-        const triangle_points = dual ? `${x+squareSize},${y} ${x+squareSize},${y+squareSize} ${x},${y+squareSize}` : `${x},${y} ${x+squareSize},${y} ${x},${y+squareSize}`
         return (
-          <Polygon
-            key={index + 1000*Number(dual)}
-            points={triangle_points}
-            fill={cMap(value)}
+          <Rect
+            key={index}
+            width={squareSize}
+            height={squareSize}
+            x={titleWidth + (index) * (scaleStepsWidth)}
+            y={-charHeight*3}
+            fill={this.getColorForValue(value)}
           />
         )});
 
       var texts =  range.map((value, index) => {
         return (
           <Text
-            key={index+ 1000*Number(dual)}
+            key={index}
             x={titleWidth + (index) * (scaleStepsWidth)}
-            y={charHeight +yOffset}
-            fill={"black"}
+            y={charHeight}
             {...this.getPropsForLabels()}
           >{cl.formatCLabel(value)}</Text>
         )});
@@ -348,13 +382,14 @@ ContributionGraphProps,
         <G x={x0} y={y0}>
            <Text
             x={0}
-            y={-charHeight +yOffset}
+            y={-charHeight}
             {...this.getPropsForLabels()}
           >{cl.title}</Text>
           {texts}
           {squares}
         </G>
       )
+    }
   }
 
   renderWeekDayLabels() {
@@ -408,7 +443,7 @@ ContributionGraphProps,
           {...this.getPropsForLabels()}
         >
           {this.props.getMonthLabel
-            ? this.props.getMonthLabel(endOfWeek.getMonth())
+            ? this.props.getMonthLabel(endOfWeek.getUTCMonth())
             : MONTH_LABELS[endOfWeek.getUTCMonth()]}
         </Text>
       ) : null;
@@ -425,8 +460,7 @@ ContributionGraphProps,
     horizontal: true,
     showMonthLabels: true,
     showOutOfRangeDays: false,
-    accessor1: "value1",
-    accessor2: "value2",
+    accessor: "value",
     classForValue: value => (value ? "black" : "#8cc665"),
     style: {}
   };
@@ -434,20 +468,20 @@ ContributionGraphProps,
   render() {
     const { style } = this.props;
 
-     let { borderRadius = 0 } = style;
+    let { borderRadius = 0 } = style;
 
     if (!borderRadius && this.props.chartConfig.style) {
       const stupidXo = this.props.chartConfig.style.borderRadius;
       borderRadius = stupidXo;
     }
 
-    // // make room for scales
-    const canvasHeight = this.props.height + 60;
+    // make room for scale if enabled
+    const canvasHeight = this.props.showLegend ? this.props.height + 15 : this.props.height;
 
     return (
       <View style={style}>
         <Svg height={canvasHeight} width={this.props.width}>
-        {this.renderDefs({
+          {this.renderDefs({
             width: this.props.width,
             height: this.props.height,
             ...this.props.chartConfig
@@ -462,12 +496,11 @@ ContributionGraphProps,
           <G>{this.renderWeekDayLabels()}</G>
           <G>{this.renderMonthLabels()}</G>
           <G>{this.renderAllWeeks()}</G>
-          <G>{this.renderScale(this.props.colorLegend, false)}</G>
-          <G>{this.renderScale(this.props.colorLegendDual, true)}</G>
+          <G>{this.renderScale()}</G>
         </Svg>
       </View>
     );
   }
 }
 
-export default ContributionGraphDual;
+export default ContributionGraph;
