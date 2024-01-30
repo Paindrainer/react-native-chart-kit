@@ -301,7 +301,7 @@ class ContributionGraph extends AbstractChart<
             [this.props.accessor]: 0,
             date: new Date(
               this.getStartDate().valueOf() + index * MILLISECONDS_IN_ONE_DAY
-            )
+            ).toISOString()
           }
     );
   }
