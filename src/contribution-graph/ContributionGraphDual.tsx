@@ -133,8 +133,10 @@ ContributionGraphProps,
     let minValue = Infinity, maxValue = -Infinity;
     let minValueDual = Infinity, maxValueDual = -Infinity;
 
+    if(values?.length === undefined) return {valueCache: {}, minValue, maxValue, minValueDual, maxValueDual};
+
     return {
-      valueCache: values.reduce((memo, value) => {
+      valueCache: values?.reduce((memo, value) => {
         const date = convertToDate(value.date);
 
         let index = Math.floor(
@@ -241,7 +243,9 @@ ContributionGraphProps,
 
 
     return (
-      <G key={index}>
+      <G key={index} onPress={() => {
+        this.handleDayPress(index);
+      }}>
       <Polygon
         key={1000+index}
         points={ll_points}
@@ -253,6 +257,23 @@ ContributionGraphProps,
         fill={colorList[0]}
       />
       </G>
+    );
+  }
+
+  handleDayPress(index: number) {
+    if (!this.props.onDayPress) {
+      return;
+    }
+
+    this.props.onDayPress(
+      this.state.valueCache[index] && this.state.valueCache[index].value
+        ? this.state.valueCache[index].value
+        : {
+            [this.props.accessor]: 0,
+            date: new Date(
+              this.getStartDate().valueOf() + index * MILLISECONDS_IN_ONE_DAY
+            ).toISOString()
+          }
     );
   }
 
@@ -274,68 +295,83 @@ ContributionGraphProps,
   }
 
   renderScale(cl, dual=false) {
+    let lowerBound = cl.minValue;
+    let upperBound = cl.maxValue;
 
-      let upperBound = cl.maxValue;
-      let lowerBound = cl.minValue;
+    // infer bounds from data if not specified
+    if (lowerBound === undefined || upperBound === undefined){
+      let tempvalues = this.props.values.map((item) => {
+        if(dual){
+          return item[this.props.accessorDual];
+        } else {
+          return item[this.props.accessor];
+        }
+      }).filter((item) => {
+        return item !== undefined && item !== null;
+      });
 
-      const yOffset = dual ? 45 : -5;
-      const cMap = dual ? this.props.chartConfig.colorDual : this.props.chartConfig.color;
+      if (lowerBound === undefined) lowerBound = Math.min(...tempvalues);
+      if (upperBound === undefined) upperBound = Math.max(...tempvalues);
+    }
 
-      const createDescRange = (start, end) =>  
-        Array.from({length: (end - start+1)}, (v, k) => -k + end);
+    const yOffset = dual ? 45 : -5;
+    const cMap = dual ? this.props.chartConfig.colorDual : this.props.chartConfig.color;
 
-      const createAscRange = (start, end) =>  
-        Array.from({length: (end - start+1)}, (v, k) => start + k);
+    const createDescRange = (start, end) =>  
+      Array.from({length: (end - start+1)}, (v, k) => -k + end);
+
+    const createAscRange = (start, end) =>  
+      Array.from({length: (end - start+1)}, (v, k) => start + k);
 
 
-      const range = cl.descending? createDescRange(lowerBound, upperBound): createAscRange(lowerBound, upperBound);
+    const range = cl.descending? createDescRange(lowerBound, upperBound): createAscRange(lowerBound, upperBound);
 
-      const { squareSize = SQUARE_SIZE } = this.props;
+    const { squareSize = SQUARE_SIZE } = this.props;
 
-      let scaleStepsWidth = Math.max(...range.map((value) => {
-        return cl.formatCLabel(value).toString().length;
-      }))*charWidth;
+    let scaleStepsWidth = Math.max(...range.map((value) => {
+      return cl.formatCLabel(value).toString().length;
+    }))*charWidth;
 
-      scaleStepsWidth = Math.max(scaleStepsWidth, squareSize);
-      const titleWidth = cl.titleWidth ? cl.titleWidth: (cl.title.length+1)*charWidth;
+    scaleStepsWidth = Math.max(scaleStepsWidth, squareSize);
+    const titleWidth = cl.titleWidth ? cl.titleWidth: (cl.title.length+1)*charWidth;
 
-      const [x0, y0] = this.getTransformForcolorLegend1();
+    const [x0, y0] = this.getTransformForcolorLegend1();
 
-      
-      var squares =  range.map((value, index) => {
-        const x = titleWidth + (index) * (scaleStepsWidth);
-        const y = -charHeight*3 + yOffset;
-        const triangle_points = dual ? `${x+squareSize},${y} ${x+squareSize},${y+squareSize} ${x},${y+squareSize}` : `${x},${y} ${x+squareSize},${y} ${x},${y+squareSize}`
-        return (
-          <Polygon
-            key={index + 1000*Number(dual)}
-            points={triangle_points}
-            fill={cMap(value)}
-          />
-        )});
-
-      var texts =  range.map((value, index) => {
-        return (
-          <Text
-            key={index+ 1000*Number(dual)}
-            x={titleWidth + (index) * (scaleStepsWidth)}
-            y={charHeight +yOffset}
-            fill={"black"}
-            {...this.getPropsForLabels()}
-          >{cl.formatCLabel(value)}</Text>
-        )});
-
+    
+    var squares =  range.map((value, index) => {
+      const x = titleWidth + (index) * (scaleStepsWidth);
+      const y = -charHeight*3 + yOffset;
+      const triangle_points = dual ? `${x+squareSize},${y} ${x+squareSize},${y+squareSize} ${x},${y+squareSize}` : `${x},${y} ${x+squareSize},${y} ${x},${y+squareSize}`
       return (
-        <G x={x0} y={y0}>
-           <Text
-            x={0}
-            y={-charHeight +yOffset}
-            {...this.getPropsForLabels()}
-          >{cl.title}</Text>
-          {texts}
-          {squares}
-        </G>
-      )
+        <Polygon
+          key={index + 1000*Number(dual)}
+          points={triangle_points}
+          fill={cMap(value)}
+        />
+      )});
+
+    var texts =  range.map((value, index) => {
+      return (
+        <Text
+          key={index+ 1000*Number(dual)}
+          x={titleWidth + (index) * (scaleStepsWidth)}
+          y={charHeight +yOffset}
+          fill={"black"}
+          {...this.getPropsForLabels()}
+        >{cl.formatCLabel(value)}</Text>
+      )});
+
+    return (
+      <G x={x0} y={y0}>
+          <Text
+          x={0}
+          y={-charHeight +yOffset}
+          {...this.getPropsForLabels()}
+        >{cl.title}</Text>
+        {texts}
+        {squares}
+      </G>
+    )
   }
 
   renderWeekDayLabels() {

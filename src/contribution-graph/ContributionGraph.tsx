@@ -138,6 +138,8 @@ class ContributionGraph extends AbstractChart<
     let minValue = Infinity,
       maxValue = -Infinity;
 
+    if(values.length === undefined) return {valueCache: {}, minValue, maxValue};
+
     return {
       valueCache: values.reduce((memo, value) => {
         const date = convertToDate(value.date);
@@ -301,7 +303,7 @@ class ContributionGraph extends AbstractChart<
             [this.props.accessor]: 0,
             date: new Date(
               this.getStartDate().valueOf() + index * MILLISECONDS_IN_ONE_DAY
-            )
+            ).toISOString()
           }
     );
   }
@@ -326,15 +328,18 @@ class ContributionGraph extends AbstractChart<
   renderScale() {
     if (this.props.colorLegend) {
       const cl = this.props.colorLegend;
-      var tempvalues = this.props.values.map((item) => {
-        return item.value;
-      });
+      let lowerBound = cl.minValue;
+      let upperBound = cl.maxValue;
+      if (lowerBound === undefined || upperBound === undefined){
+        let tempvalues = this.props.values.map((item) => {
+          return item.value;
+        }).filter((item) => {
+          return item !== undefined && item !== null;
+        });
 
-      let upperBound = Math.max(...tempvalues);
-      let lowerBound = Math.min(...tempvalues);
-
-      if (cl.maxValue != null) upperBound = Math.max(upperBound, cl.maxValue);
-      if (cl.minValue != null) lowerBound = Math.min(lowerBound, cl.minValue);
+        if (lowerBound === undefined) lowerBound = Math.min(...tempvalues);
+        if (upperBound === undefined) upperBound = Math.max(...tempvalues);
+      }
 
       const createDescRange = (start, end) =>  
       Array.from({length: (end - start+1)}, (v, k) => -k + end);
