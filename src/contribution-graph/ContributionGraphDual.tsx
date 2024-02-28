@@ -77,7 +77,7 @@ ContributionGraphProps,
   }
 
   getEndDate() {
-    return getBeginningTimeForDate(convertToDate(this.props.endDate));
+    return convertToDate(this.props.endDate);
   }
 
   getStartDateWithEmptyDays() {
